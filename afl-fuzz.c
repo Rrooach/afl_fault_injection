@@ -4757,7 +4757,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   write_to_testcase(out_buf, len);
   
   struct node* ops = head;
-  while (ops != NULL)
+  while (1)
   {
     u32 len = ops->val_inx;
     u32 pos = rand()%(len);
@@ -4768,6 +4768,8 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
     array[ops->key] = rp;
     out_buf = &array[0];
     ops = ops->next;
+    if (ops == end->next)
+      break;
   }
 
   fault = run_target(argv, exec_tmout);

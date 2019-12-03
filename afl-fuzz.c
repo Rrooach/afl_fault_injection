@@ -82,9 +82,9 @@
 cJSON *json;
 /*Replace seed */
 struct node {
-  int key;
-  char* value[100];
-  int val_inx;
+  u32 key;
+  u8* value[100];
+  u32 val_inx;
   struct node* next;
 };
 

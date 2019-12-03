@@ -301,7 +301,7 @@ u32 find(u32 key)
 {
   struct node *ops = head;
   u32 flag = 0;
-  while (ops != NULL)
+  while (1)
   { 
     if (ops->key == key)
     {
@@ -309,6 +309,8 @@ u32 find(u32 key)
       break;
     }
     ops = ops->next;
+    if (ops == end->next)
+      break;
   }
   return flag;
 }
@@ -332,7 +334,7 @@ void printJson(cJSON * root)
             u32 virgin_loop = 1;
             struct node *ops = head;
             //locate the match key value
-            while (ops != NULL)
+            while (1)
             {  
               //if matches， check wether this value appeared before
               if (ops->key == atoi(item->string))
@@ -357,6 +359,8 @@ void printJson(cJSON * root)
                 break;
               }
               ops = ops->next;
+              if (ops == end->next)
+                break;
             }
 
           }

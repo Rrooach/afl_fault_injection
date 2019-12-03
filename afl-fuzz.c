@@ -297,7 +297,7 @@ static s32 interesting_32[] = { INTERESTING_8, INTERESTING_16, INTERESTING_32 };
 
 
 
-int find(int key)
+u32 find(u32 key)
 {
   struct node *ops = head;
   u32 flag = 0;
@@ -315,7 +315,7 @@ int find(int key)
 //creat key-value pair in iteration way
 void printJson(cJSON * root)
 {
-    int i = 0;
+    u32 i = 0;
     for(; i<cJSON_GetArraySize(root); i++)
     {
         cJSON *item = cJSON_GetArrayItem(root, i);
@@ -325,11 +325,11 @@ void printJson(cJSON * root)
         {
          
           //0 -> not find, else found
-          int if_exist = find(atoi(item->string));  
+          u32 if_exist = find(atoi(item->string));  
           //if the key has exist -> append key's value
           if (if_exist)
           {
-            int virgin_loop = 1;
+            u32 virgin_loop = 1;
             struct node *ops = head;
             //locate the match key value
             while (ops != NULL)
@@ -338,7 +338,7 @@ void printJson(cJSON * root)
               if (ops->key == atoi(item->string))
               {
                 //deduplicate 
-                for (int i = 0; i < sizeof(ops->value); ++i)
+                for (u32 i = 0; i < sizeof(ops->value); ++i)
                 {
                   //see if ops->value[i] empty -> prevent segenmetation fault
                   if (ops->value[i] == NULL)
@@ -421,8 +421,8 @@ void show()
   while (1)
   {
     printf("%d: ", ops->key);
-    int size = (sizeof(ops->value))/4;
-    int i = 0;
+    u32 size = (sizeof(ops->value))/4;
+    u32 i = 0;
     for (; i < ops->val_inx/*sizeof(ops->value)*/; ++i)
     {
         puts(ops->value[i]);

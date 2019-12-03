@@ -147,8 +147,7 @@ void show()
     if (ops == end->next)
       break;
   }
-}
-ioMSfxtmTGKMdBCnTQ
+} 
 int main(){
 
     FILE *f;

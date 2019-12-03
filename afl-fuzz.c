@@ -31,7 +31,7 @@
 #include "debug.h"
 #include "alloc-inl.h"
 #include "hash.h"
-
+#include "cJSON.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -79,8 +79,21 @@
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
 
+cJSON *json;
+/*Replace seed */
+struct node {
+  int key;
+  char* value[100];
+  int val_inx;
+  struct node* next;
+};
 
-EXP_ST u8 *in_dir,                    /* Input directory with test cases  */
+struct node* head;
+struct node* end;
+struct node* Head;
+
+EXP_ST u8 *json_dir,
+          *in_dir,                    /* Input directory with test cases  */
           *out_file,                  /* File to fuzz, if any             */
           *out_dir,                   /* Working & output directory       */
           *sync_dir,                  /* Synchronization directory        */
@@ -280,6 +293,146 @@ static s8  interesting_8[]  = { INTERESTING_8 };
 static s16 interesting_16[] = { INTERESTING_8, INTERESTING_16 };
 static s32 interesting_32[] = { INTERESTING_8, INTERESTING_16, INTERESTING_32 };
 
+
+
+
+
+int find(int key)
+{
+  struct node *ops = head;
+  u32 flag = 0;
+  while (ops != NULL)
+  { 
+    if (ops->key == key)
+    {
+      flag = 1;
+      break;
+    }
+    ops = ops->next;
+  }
+  return flag;
+}
+//creat key-value pair in iteration way
+void printJson(cJSON * root)
+{
+    int i = 0;
+    for(; i<cJSON_GetArraySize(root); i++)
+    {
+        cJSON *item = cJSON_GetArrayItem(root, i);
+        if(cJSON_Object == item->type)
+            printJson(item);
+        else
+        {
+         
+          //0 -> not find, else found
+          int if_exist = find(atoi(item->string));  
+          //if the key has exist -> append key's value
+          if (if_exist)
+          {
+            int virgin_loop = 1;
+            struct node *ops = head;
+            //locate the match key value
+            while (ops != NULL)
+            {  
+              //if matches， check wether this value appeared before
+              if (ops->key == atoi(item->string))
+              {
+                //deduplicate 
+                for (int i = 0; i < sizeof(ops->value); ++i)
+                {
+                  //see if ops->value[i] empty -> prevent segenmetation fault
+                  if (ops->value[i] == NULL)
+                    break; 
+                  //if get a match -> skip it
+                  if (0 == strcmp(ops->value[i],cJSON_Print(item)))
+                  {
+                    virgin_loop = 0;
+                  }
+                }
+
+                if (0 == virgin_loop)
+                  break;
+                //if the value never appears in the key's array
+                ops->value[ops->val_inx++] = cJSON_Print(item); 
+                break;
+              }
+              ops = ops->next;
+            }
+
+          }
+          //if not find, apple the list
+          else
+          {
+            if (atoi(item->string) > 1000  || atoi(item->string) < 0 )
+              continue; 
+            struct node* node = (struct node*)malloc(sizeof(struct node));
+            memset (node->value, '\0', 100);
+            node->val_inx = 0;
+            node->key = atoi(item->string);
+            node->value[node->val_inx++] = cJSON_Print(item);
+
+            end->next = node;
+		        end = node;
+          }
+
+            // printf("%s->", item->string);
+            // printf("%s\n", cJSON_Print(item));
+        }
+    }
+}
+
+void read_jsonspec()
+{
+  FILE *f;
+  s64 len;
+  u8* *content;
+
+
+
+  f=fopen(json_dir,"rb");
+  fseek(f,0,SEEK_END);
+  len=ftell(f);
+  fseek(f,0,SEEK_SET);
+  content=(char*)malloc(len+1);
+  fread(content,1,len,f);
+  fclose(f); 
+
+  json=cJSON_Parse(content); 
+  if (!json)  printf("Error before: [%s]\n",cJSON_GetErrorPtr()); 
+  printJson(json); 
+
+}
+
+struct node* reverseList(struct node* head) {
+   if (head == NULL || head->next == NULL)
+   		return head;
+   	else
+   	{
+   		struct node * newhead = reverseList(head->next);
+   		head->next->next = head;
+   		head->next = NULL;
+   		return newhead;
+   	}
+}
+
+void show()
+{
+  struct node* ops = Head;
+  while (1)
+  {
+    printf("%d: ", ops->key);
+    int size = (sizeof(ops->value))/4;
+    int i = 0;
+    for (; i < ops->val_inx/*sizeof(ops->value)*/; ++i)
+    {
+        puts(ops->value[i]);
+    }
+    printf("\n");
+    ops = ops->next;
+    if (ops == end->next)
+      break;
+  }
+}
 /* Fuzzing stages */
 
 enum {
@@ -2034,10 +2187,11 @@ EXP_ST void init_forkserver(char** argv) {
        specified, stdin is /dev/null; otherwise, out_fd is cloned instead. */
 
     setsid();
-
+	ACTF("22222");
     dup2(dev_null_fd, 1);
+    ACTF("11111");
     dup2(dev_null_fd, 2);
-
+ACTF("44444");
     if (out_file) {
 
       dup2(dev_null_fd, 0);
@@ -4587,6 +4741,7 @@ abort_trimming:
 EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   u8 fault;
+  
 
   if (post_handler) {
 
@@ -4596,6 +4751,20 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   }
 
   write_to_testcase(out_buf, len);
+  
+  struct node* ops = head;
+  while (ops != NULL)
+  {
+    u32 len = ops->val_inx;
+    u32 pos = rand()%(len);
+    u32 tmp = atoi(ops->value[pos]);
+    u8 rp = (char)tmp;
+    u8 array[1000000];
+    strcpy(array, out_buf);
+    array[ops->key] = rp;
+    out_buf = &array[0];
+    ops = ops->next;
+  }
 
   fault = run_target(argv, exec_tmout);
 
@@ -7704,7 +7873,7 @@ static void save_cmdline(u32 argc, char** argv) {
 /* Main entry point */
 
 int main(int argc, char** argv) {
-
+  srand((unsigned)(time(NULL)));
   s32 opt;
   u64 prev_queued = 0;
   u32 sync_interval_cnt = 0, seek_to;
@@ -7715,17 +7884,26 @@ int main(int argc, char** argv) {
 
   struct timeval tv;
   struct timezone tz;
-
+  head = (struct node *)malloc(sizeof(struct node));
+  end = (struct node *)malloc(sizeof(struct node));
+  memset (head->value, '\0', 100);
+  end = head; 
+  
   SAYF(cCYA "afl-fuzz " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
-
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
+  ACTF("American");
+  while ((opt = getopt(argc, argv, "+j:i:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
 
     switch (opt) {
+       case 'j': /* json file specification */
+        if(json_dir != NULL) FATAL("Multiple -j options not supported");
+        json_dir = optarg;  
+        
+        break;
 
       case 'i': /* input dir */
 
@@ -7741,7 +7919,7 @@ int main(int argc, char** argv) {
         if (out_dir) FATAL("Multiple -o options not supported");
         out_dir = optarg;
         break;
-
+     
       case 'M': { /* master sync ID */
 
           u8* c;
@@ -7799,7 +7977,7 @@ int main(int argc, char** argv) {
           break;
 
       }
-
+    
       case 'm': { /* mem limit */
 
           u8 suffix = 'M';
@@ -7953,6 +8131,10 @@ int main(int argc, char** argv) {
 
   setup_post();
   setup_shm();
+  if(json_dir != NULL) 
+  {
+    read_jsonspec();
+  }
   init_count_class16();
 
   setup_dirs_fds();

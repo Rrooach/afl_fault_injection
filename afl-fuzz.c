@@ -4760,7 +4760,10 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   while (1)
   {
     u32 len = ops->val_inx;
-    u32 pos = rand()%(len);
+    // u32 pos = rand()%(len);
+    u32 t = rand();
+    while (0 == t) {t = rand();}
+    u32 pos = t%len;
     u32 tmp = atoi(ops->value[pos]);
     u8 rp = '0' + tmp;
     u8 array[1000000];

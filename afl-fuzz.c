@@ -4762,7 +4762,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
     u32 len = ops->val_inx;
     u32 pos = rand()%(len);
     u32 tmp = atoi(ops->value[pos]);
-    u8 rp = (u8)tmp;
+    u8 rp = '0' + tmp;
     u8 array[1000000];
     strcpy(array, out_buf);
     array[ops->key] = rp;

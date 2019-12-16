@@ -47,8 +47,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <dlfcn.h>
-#include <sched.h>
-
+#include <sched.h>  
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <sys/shm.h>
@@ -59,11 +58,18 @@
 #include <sys/ioctl.h>
 #include <sys/file.h>
 #include <cjson/cJSON.h>
+#define SET_SIZE 100000
+typedef struct set{
+    int seqlist[SET_SIZE];
+    int index;
+}set;
+
+set Set;
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined (__OpenBSD__)
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
-
+ 
 /* For systems that have sched_setaffinity; right now just Linux, but one
    can hope... */
 
@@ -82,6 +88,8 @@
 
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
+
+u32 error_seq;
 
 EXP_ST cJSON* json_spec[TARGET_SIZE],       /* json specification */
               *candidates = NULL;     /* candidates in json */
@@ -276,7 +284,7 @@ struct queue_entry {
   u8* target_hits;                    /* Trace if the seed hits target branch, record hit time */
 
   u8 hot_hits;                        /* Hit "hot" function(malloc,memcpy) times*/
-
+  u32 seq;
   struct queue_entry *next,           /* Next element, if any             */
                      *next_100;       /* 100 elements ahead               */
 
@@ -352,6 +360,34 @@ enum {
   /* 05 */ FAULT_NOBITS
 };
 
+
+void set_ini()
+{
+    memset(Set.seqlist, -1, SET_SIZE);
+    Set.index = 0;
+}
+
+u32 set_contain(u32 val)
+{
+    u32 i = 0;
+    for (i = 0; i < Set.index; ++i)
+    {
+        if (Set.seqlist[i] == val)
+            return 1;   
+    }
+    return 0;
+}
+
+u32 set_insert(u32 val)
+{
+    if(!set_contain(val))
+    {
+        Set.seqlist[Set.index++] = val;
+        return 1;
+    }
+    else
+        return 0;
+}
 
 /* Get unix time in milliseconds */
 
@@ -2694,8 +2730,11 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   if(json_dir != NULL && count_json_spec)
   {
+    
     int _i = 0;
     int _cnt = 0;
+    if (error_seq != NULL)
+      queue_cur->seq = error_seq;
     for(_i = MAP_SIZE; _i < MAP_SIZE + count_json_spec; _i++)
     {
       if(trace_bits[_i] && (_i - MAP_SIZE)!= cur_replace_index)
@@ -5251,6 +5290,11 @@ static u8 fuzz_one(char** argv) {
   memset(rand_seed, -1, sizeof(rand_seed));
   u8* origin = (u8*)malloc(strlen(out_buf)+4); 
   strcpy(origin, out_buf); 
+
+  error_seq = rand()%candidates_count;
+  if (set_contain(error_seq))
+    goto skip_replace;
+
  
   /********************
    *    REPLACEMENT   *
@@ -5268,11 +5312,9 @@ static u8 fuzz_one(char** argv) {
 
   orig_hit_cnt = new_hit_cnt;
 
-  cJSON *resolution = NULL;
-
   u32 _len = 1;
-  
-  for(i = 0; i < 1; i++)
+  int loop_cnt = (1<<candidates_count);
+  for(i = 0; i < loop_cnt; i++)
   {
     for (int i = 0; i < cJSON_GetArraySize(json); ++i)
     { 
@@ -5281,24 +5323,29 @@ static u8 fuzz_one(char** argv) {
         rand_seed[i/10] = rand()%1024; 
       int _pos = (i%10)+1;
       //cannot access
-      if ((rand_seed[i/10] >> _pos) < 0)
+      if (!(error_seq >> (i-1) & 1))
         continue;
       //can replace
-      if(rand_seed[i/10] & _pos)
+      if((error_seq >> (i-1)) & 1)
       {
         for (int j = 0; j < cJSON_GetArraySize(item); ++j)
         {
           cJSON * child = cJSON_GetArrayItem(item, j); 
           char* _val = cJSON_Print(child);
           char val = (char)atoi(_val);
-          if (out_buf[atoi(child->string)] != origin[atoi(child->string)])
+          if (out_buf[atoi(child->string)] != origin[atoi(child->string)] 
+              || atoi(child->string) >= strlen(out_buf))
+          { 
+            set_insert(error_seq); 
             continue;
-          if (val == 0) val = 27;  
+          }
+          // if (val == 0) val = 27;  
+          
           out_buf[atoi(child->string)] = val; 
         } 
       }
     } 
- 
+    
     if (common_fuzz_stuff(argv, out_buf, len)) goto abandon_entry;
     stage_cur++;
   }
@@ -5604,26 +5651,27 @@ skip_replace:
   /*  update effector map when -j option is on */
 
 
-  // if(json_dir != NULL)
-  // {
-  //   if(spec_start_byte >= 0 && spec_start_byte <= spec_end_byte)
-  //   {
-  //     if(spec_end_byte >= len)
-  //     {
-  //       spec_end_byte = len - 1;
+  if(json_dir != NULL)
+  {
 
-  //       for(stage_cur = spec_start_byte; stage_cur <= spec_end_byte; stage_cur++)
-  //       {
-  //         if(eff_map[EFF_APOS(stage_cur)])
-  //         {
-  //           eff_map[EFF_APOS(stage_cur)] = 0;
-  //           //blocks_eff_select--; //to do 
-  //         }
-  //       }
-  //     }
+    // if(spec_start_byte >= 0 && spec_start_byte <= spec_end_byte)
+    // {
+    //   if(spec_end_byte >= len)
+    //   {
+    //     spec_end_byte = len - 1;
 
-  //   }
-  // }
+        // for(stage_cur = 0; stage_cur <= len-1; stage_cur++)
+        // {
+        //   if(eff_map[EFF_APOS(stage_cur)])
+        //   {
+        //     eff_map[EFF_APOS(stage_cur)] = 0;
+        //     //blocks_eff_select--; //to do 
+        //   }
+        // }
+    //   }
+
+    // }
+  }
 
 
   blocks_eff_total += EFF_ALEN(len);
@@ -8037,7 +8085,7 @@ static void read_jsonspec(void) {
   FILE *f;
   s64 len;
   u8* *content;
-
+  json = NULL;
   f=fopen(json_dir,"rb");
   fseek(f,0,SEEK_END);
   len=ftell(f);
@@ -8045,10 +8093,10 @@ static void read_jsonspec(void) {
   content=(u8*)malloc(len+1);
   fread(content,1,len,f);
   fclose(f); 
+
+  json = cJSON_Parse(content); 
   count_json_spec = cJSON_GetArraySize(json);
   candidates_count = cJSON_GetArraySize(json);
-  json = cJSON_Parse(content); 
-  
   if (!json)  printf("Error before: [%s]\n",cJSON_GetErrorPtr());   
 }
 
@@ -8375,8 +8423,9 @@ int main(int argc, char** argv) {
   pivot_inputs();
   
   if(json_dir != NULL) 
-  {
+  { 
     read_jsonspec();
+    set_ini();
   }
   if (extras_dir) load_extras(extras_dir);
 

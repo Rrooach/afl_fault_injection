@@ -27,13 +27,13 @@ MISC_PATH   = $(PREFIX)/share/afl
 PROGS       = afl-gcc afl-fuzz afl-showmap afl-tmin afl-gotcpu afl-analyze
 SH_PROGS    = afl-plot afl-cmin afl-whatsup
 
-CFLAGS     ?= -O3 -funroll-loops -lcjson
-CFLAGS     += -Wall -D_FORTIFY_SOURCE=2 -g -lcjson -Wno-pointer-sign \
+CFLAGS     ?= -O3 -funroll-loops -lcjson 
+CFLAGS     += -Wall -D_FORTIFY_SOURCE=2 -g -lm -lcjson -Wno-pointer-sign \
 	      -DAFL_PATH=\"$(HELPER_PATH)\" -DDOC_PATH=\"$(DOC_PATH)\" \
 	      -DBIN_PATH=\"$(BIN_PATH)\"
 
 ifneq "$(filter Linux GNU%,$(shell uname))" ""
-  LDFLAGS  += -ldl  -lcjson  
+  LDFLAGS  += -ldl  -lcjson -lm 
 endif
 
 ifeq "$(findstring clang, $(shell $(CC) --version 2>/dev/null))" ""

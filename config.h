@@ -33,7 +33,8 @@
    a lot less nice): */
 
 #define USE_COLOR
-
+/* Trace the target branch(switch statement), target branch size */
+#define TARGET_SIZE 32
 /* Comment out to disable fancy ANSI boxes and use poor man's 7-bit UI: */
 
 #define FANCY_BOXES

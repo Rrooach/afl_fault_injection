@@ -87,8 +87,7 @@ set Set;
 #endif /* ^AFL_LIB */
 
 /* Lots of globals, but mostly for the status UI and other things where it
-   really makes no sense to haul them around as function parameters. */
-
+   really makes no sense to haul them around as function parameters. */ 
 u32 error_seq;
 
 EXP_ST cJSON* json_spec[TARGET_SIZE],       /* json specification */
@@ -129,8 +128,7 @@ static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 EXP_ST u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
 
 static u32 stats_update_freq = 1;     /* Stats update frequency (execs)   */
-cJSON* json;
-u8 rand_seed[1000];
+cJSON* json; 
 EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            force_deterministic,       /* Force deterministic stages?      */
            use_splicing,              /* Recombine input files?           */
@@ -363,8 +361,10 @@ enum {
 
 void set_ini()
 {
-    memset(Set.seqlist, -1, SET_SIZE);
-    Set.index = 0;
+  ACTF("Initial error sequence set...");
+  memset(Set.seqlist, -1, SET_SIZE);
+
+  Set.index = 0;
 }
 
 u32 set_contain(u32 val)
@@ -5282,45 +5282,86 @@ static u8 fuzz_one(char** argv) {
 
   if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
     goto havoc_stage;
-  
-  u32 _time = last_path_time;
-  double pro = 1-(1/exp(_time/1000));
+#define _max(_a,_b) ((_a)>(_b)? (_a):(_b))
 
-  if (pro < 0.95)    goto skip_replace;
-  memset(rand_seed, -1, sizeof(rand_seed));
-  u8* origin = (u8*)malloc(strlen(out_buf)+4); 
-  strcpy(origin, out_buf); 
+#define _min(_a,_b) ((_a)<(_b)? (_a):(_b))  
+  // error_seq = rand()%candidates_count;
+  s32 spec_start_byte = 0, spec_end_byte = -1;
 
-  error_seq = rand()%candidates_count;
-  if (set_contain(error_seq))
-    goto skip_replace;
+  for (int i = 0; i < cJSON_GetArraySize(json); ++i)
+  {  
+    cJSON * item = cJSON_GetArrayItem(json, i);  
+    for (int j = 0; j < cJSON_GetArraySize(item); ++j)
+    {
+      cJSON * child = cJSON_GetArrayItem(item, j); 
+      spec_start = min(spec_start, atoi(item->string));
+      spec_end = max(spec_end, atoi(item->string));
+    }
+  }
 
- 
+  spec_start_byte = _max(0, spec_start);
+  spec_end_byte = _min(len - 1, spec_end);
+
   /********************
    *    REPLACEMENT   *
    ********************/
 
   replace_new_cnt = 0;
- 
+  
+  u32 _time = last_path_time;
+  double pro = 1-(1/exp(_time));
+
+  if (pro < 0.95)    goto skip_replace; 
+  u8* origin = (u8*)malloc(strlen(out_buf)+4); 
+  strcpy(origin, out_buf); 
+
   //byte level only
   stage_name  = "replacement";
   stage_short = "replacement";
   stage_cur   = 0;
   stage_max   = candidates_count;
-
+  error_seq = 0; 
   stage_val_type = STAGE_VAL_NONE;
 
   orig_hit_cnt = new_hit_cnt;
 
   u32 _len = 1;
-  int loop_cnt = (1<<candidates_count);
+  int loop_cnt = (1<<(candidates_count+1));
+
+  if(spec_start_byte >= len) goto skip_replace;
+
   for(i = 0; i < loop_cnt; i++)
   {
+    if (queue_cur->seq != NULL) 
+      error_seq = queue_cur->seq;
+    error_seq++;
+    
+    //get start_byte && end_byte
+
+    if (set_contain(error_seq) || error_seq >= loop_cnt)
+      goto skip_replace; 
+
+    u32 _ori = queue_cur->seq;
+    u32 _mod = error_seq; 
+    u32 flag = 1, idx = 0;
+    while (_mod != 0 || _ori != 0)
+    {
+
+      idx++;
+      if ((_mod ^ _ori) && flag)
+      { 
+        spec_start_byte = idx;
+        flag = 0;
+      }
+      if ((_mod ^ _ori) && !flag)
+        spec_end_byte = idx;
+      _mod >>= 1, _ori >>= 1;
+
+    }
+
     for (int i = 0; i < cJSON_GetArraySize(json); ++i)
     { 
-      cJSON * item = cJSON_GetArrayItem(json, i); 
-      if (rand_seed[i/10] == -1)
-        rand_seed[i/10] = rand()%1024; 
+      cJSON * item = cJSON_GetArrayItem(json, i);  
       int _pos = (i%10)+1;
       //cannot access
       if (!(error_seq >> (i-1) & 1))
@@ -5331,17 +5372,18 @@ static u8 fuzz_one(char** argv) {
         for (int j = 0; j < cJSON_GetArraySize(item); ++j)
         {
           cJSON * child = cJSON_GetArrayItem(item, j); 
-          char* _val = cJSON_Print(child);
-          char val = (char)atoi(_val);
+          
+          u8 val = (u8)atoi(child->valueint);
           if (out_buf[atoi(child->string)] != origin[atoi(child->string)] 
-              || atoi(child->string) >= strlen(out_buf))
+              || atoi(child->string) >= strlen(out_buf) )
           { 
             set_insert(error_seq); 
             continue;
           }
-          // if (val == 0) val = 27;  
-          
-          out_buf[atoi(child->string)] = val; 
+          if (val == 0xF0)
+            val = 0;
+          // if (val == 0) val = 27;   
+          out_buf[atoi(child->string)] = val;
         } 
       }
     } 
@@ -5596,6 +5638,10 @@ skip_replace:
 
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
  
+    if(spec_start_byte <= stage_cur && stage_cur <= spec_end_byte)
+    {
+      continue;
+    }
 
     stage_cur_byte = stage_cur;
 
@@ -5654,23 +5700,23 @@ skip_replace:
   if(json_dir != NULL)
   {
 
-    // if(spec_start_byte >= 0 && spec_start_byte <= spec_end_byte)
-    // {
-    //   if(spec_end_byte >= len)
-    //   {
-    //     spec_end_byte = len - 1;
+    if(spec_start_byte >= 0 && spec_start_byte <= spec_end_byte)
+    {
+      if(spec_end_byte >= len)
+      {
+        spec_end_byte = len - 1;
 
-        // for(stage_cur = 0; stage_cur <= len-1; stage_cur++)
-        // {
-        //   if(eff_map[EFF_APOS(stage_cur)])
-        //   {
-        //     eff_map[EFF_APOS(stage_cur)] = 0;
-        //     //blocks_eff_select--; //to do 
-        //   }
-        // }
-    //   }
+        for(stage_cur = 0; stage_cur <= len-1; stage_cur++)
+        {
+          if(eff_map[EFF_APOS(stage_cur)])
+          {
+            eff_map[EFF_APOS(stage_cur)] = 0;
+            //blocks_eff_select--; //to do 
+          }
+        }
+      }
 
-    // }
+    }
   }
 
 
@@ -5679,7 +5725,7 @@ skip_replace:
   new_hit_cnt = queued_paths + unique_crashes;
 
   stage_finds[STAGE_FLIP8]  += new_hit_cnt - orig_hit_cnt;
-  stage_cycles[STAGE_FLIP8] += stage_max;// - (spec_end_byte - spec_start_byte + 1);
+  stage_cycles[STAGE_FLIP8] += stage_max - (spec_end_byte - spec_start_byte + 1);
 
   /* Two walking bytes. */
 
@@ -8086,15 +8132,24 @@ static void read_jsonspec(void) {
   s64 len;
   u8* *content;
   json = NULL;
-  f=fopen(json_dir,"rb");
+  ACTF("Opening json file...");
+f=fopen(json_dir,"rb");
+  if (f == NULL)
+    FATAL("Open json file failed!");
   fseek(f,0,SEEK_END);
   len=ftell(f);
   fseek(f,0,SEEK_SET);
   content=(u8*)malloc(len+1);
   fread(content,1,len,f);
+  ACTF("Reading json file...");
+  if (content == NULL)
+    FATAL("Read json file failed, the file may be empty");
   fclose(f); 
 
   json = cJSON_Parse(content); 
+  ACTF("Paring json file...");
+  if (json == NULL)
+    FATAL("Parsing json failed");
   count_json_spec = cJSON_GetArraySize(json);
   candidates_count = cJSON_GetArraySize(json);
   if (!json)  printf("Error before: [%s]\n",cJSON_GetErrorPtr());   
@@ -8155,8 +8210,8 @@ int main(int argc, char** argv) {
 
   struct timeval tv;
   struct timezone tz;
-
-  SAYF(cCYA "FIAFL " cBRI VERSION cRST " by Xsuler | Rrooach\n");
+  srand((unsigned) time(0));
+  SAYF(cCYA "FIAFL " cBRI VERSION cRST " by Xsuler && Rrooach\n");
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 

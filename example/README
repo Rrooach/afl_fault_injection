@@ -1,0 +1,9 @@
+cd jpeg 
+mkdir build && cd build
+export CC=/path/to/FIAFL/afl-gcc CXX=/path/to/afl-g++ cmake ..
+make
+cp src/jpegc ../../../
+
+/path/to/FIAFL/afl-fuzz -i in -o out -j seed/output ./jpegc @@
+
+

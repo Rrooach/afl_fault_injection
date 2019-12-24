@@ -30,6 +30,7 @@ def run(pc,seed):
     global seeds
     while pc:
         if pc in seeds and seeds[pc]==0:
+            print("get one")
             seeds[pc]=seed
 
         flag=0
@@ -158,8 +159,8 @@ def getSeeds(addrs,ENTRY):
         # Take the first seed
 
         flag=0
-        for seed in seeds.values():
-            if seed==0:
+        for sed in seeds.values():
+            if sed==0:
                 flag=1
                 break
         if flag==0:
@@ -202,7 +203,7 @@ if __name__ == '__main__':
         protocol_type=2
 
 
-    ENTRY,binary=loadBinary(os.path.join(os.path.dirname(__file__), 'a.out'))
+    ENTRY,binary=loadBinary(os.path.join(os.path.dirname(__file__), sys.argv[2]))
     import imp
 
     spec = imp.load_source('name', './spec.py')
@@ -223,14 +224,8 @@ if __name__ == '__main__':
         for adr,bina in seed.items():
             seed[adr-0x1000]=bina
             seed.pop(adr)
-        res[func_addr_name_map[rev_addrs[addr]]]=seed
-
-    import json
-    seeds = json.dumps(res)
-    file = open("seed", "w:")
-    file.write(seeds)
-    file.close()
-
+        if addr in rev_addrs:
+            res[func_addr_name_map[rev_addrs[addr]]]=seed
 
     print(res)
 

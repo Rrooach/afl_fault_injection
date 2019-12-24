@@ -5282,6 +5282,15 @@ static u8 fuzz_one(char** argv) {
 
   if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
     goto havoc_stage;
+
+  /********************
+   *    REPLACEMENT   *
+   ********************/
+
+  u32 _time = last_path_time;
+  double pro = 1-(1/exp((_time/(1000*600))/10*3));
+  if (pro < 0.95)    goto skip_replace; 
+
 #define _max(_a,_b) ((_a)>(_b)? (_a):(_b))
 
 #define _min(_a,_b) ((_a)<(_b)? (_a):(_b))  
@@ -5294,24 +5303,18 @@ static u8 fuzz_one(char** argv) {
     for (int j = 0; j < cJSON_GetArraySize(item); ++j)
     {
       cJSON * child = cJSON_GetArrayItem(item, j); 
-      spec_start = min(spec_start, atoi(item->string));
-      spec_end = max(spec_end, atoi(item->string));
+      spec_start = _min(spec_start, atoi(item->string));
+      spec_end = _max(spec_end, atoi(item->string));
     }
   }
 
   spec_start_byte = _max(0, spec_start);
   spec_end_byte = _min(len - 1, spec_end);
 
-  /********************
-   *    REPLACEMENT   *
-   ********************/
-
   replace_new_cnt = 0;
   
-  u32 _time = last_path_time;
-  double pro = 1-(1/exp(_time));
+  
 
-  if (pro < 0.95)    goto skip_replace; 
   u8* origin = (u8*)malloc(strlen(out_buf)+4); 
   strcpy(origin, out_buf); 
 
@@ -5373,7 +5376,7 @@ static u8 fuzz_one(char** argv) {
         {
           cJSON * child = cJSON_GetArrayItem(item, j); 
           
-          u8 val = (u8)atoi(child->valueint);
+          u8 val = (u8)cJSON_Print(child);
           if (out_buf[atoi(child->string)] != origin[atoi(child->string)] 
               || atoi(child->string) >= strlen(out_buf) )
           { 
@@ -5406,12 +5409,13 @@ static u8 fuzz_one(char** argv) {
 
   cur_replace_index = -1;
 
-skip_replace:
 
   if (queue_cur->was_fuzzed || queue_cur->passed_det)
     goto havoc_stage;
 
   doing_det = 1;
+
+skip_replace:
 
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
@@ -6502,7 +6506,12 @@ havoc_stage:
           /* Set byte to interesting value. */
 
           rd_tmp = UR(temp_len);
- 
+ #ifdef indeterministic_use_spec
+          if(spec_start_byte <= rd_tmp && rd_tmp <= spec_end_byte)
+          {
+            rd_tmp = UR(temp_len);
+          }
+#endif
           out_buf[rd_tmp] = interesting_8[UR(sizeof(interesting_8))];
           break;
 
@@ -6515,7 +6524,12 @@ havoc_stage:
           if (UR(2)) {
             
             rd_tmp = UR(temp_len - 1);
- 
+ #ifdef indeterministic_use_spec
+            if(spec_start_byte - 1 <= rd_tmp && rd_tmp <= spec_end_byte)
+            {
+              rd_tmp = UR(temp_len - 1);
+            }
+#endif
 
             *(u16*)(out_buf + rd_tmp) =
               interesting_16[UR(sizeof(interesting_16) >> 1)];
@@ -6523,7 +6537,12 @@ havoc_stage:
           } else {
 
             rd_tmp = UR(temp_len - 1);
- 
+ #ifdef indeterministic_use_spec
+            if(spec_start_byte - 1 <= rd_tmp && rd_tmp <= spec_end_byte)
+            {
+              rd_tmp = UR(temp_len - 1);
+            }
+#endif
 
             *(u16*)(out_buf + rd_tmp) = SWAP16(
               interesting_16[UR(sizeof(interesting_16) >> 1)]);
@@ -6541,14 +6560,24 @@ havoc_stage:
           if (UR(2)) {
 
             rd_tmp = UR(temp_len - 3); 
-  
+  #ifdef indeterministic_use_spec
+           if(spec_start_byte - 3 <= rd_tmp && rd_tmp <= spec_end_byte)
+            {
+              rd_tmp = UR(temp_len - 3);
+            }
+#endif
             *(u32*)(out_buf + rd_tmp) =
               interesting_32[UR(sizeof(interesting_32) >> 2)];
 
           } else {
 
             rd_tmp = UR(temp_len - 3); 
-
+#ifdef indeterministic_use_spec
+             if(spec_start_byte - 3 <= rd_tmp && rd_tmp <= spec_end_byte)
+            {
+              rd_tmp = UR(temp_len - 3);
+            }
+#endif
             *(u32*)(out_buf + rd_tmp) = SWAP32(
               interesting_32[UR(sizeof(interesting_32) >> 2)]);
 
@@ -6562,7 +6591,12 @@ havoc_stage:
 
           rd_tmp = UR(temp_len);
  
-
+#ifdef indeterministic_use_spec
+          if(spec_start_byte <= rd_tmp && rd_tmp <= spec_end_byte)
+          {
+            rd_tmp = UR(temp_len);
+          }
+#endif
           out_buf[rd_tmp] -= 1 + UR(ARITH_MAX);
           break;
 
@@ -6572,7 +6606,12 @@ havoc_stage:
 
           rd_tmp = UR(temp_len);
  
-
+#ifdef indeterministic_use_spec
+          if(spec_start_byte <= rd_tmp && rd_tmp <= spec_end_byte)
+          {
+            rd_tmp = UR(temp_len);
+          }
+#endif
           out_buf[rd_tmp] += 1 + UR(ARITH_MAX);
           break;
 
@@ -6586,6 +6625,12 @@ havoc_stage:
 
             u32 pos = UR(temp_len - 1);
  
+#ifdef indeterministic_use_spec
+          if(spec_start_byte - 1 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 1);
+          }
+#endif
 
             *(u16*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
 
@@ -6595,6 +6640,12 @@ havoc_stage:
             u16 num = 1 + UR(ARITH_MAX);
  
 
+#ifdef indeterministic_use_spec
+          if(spec_start_byte - 1 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 1);
+          }
+#endif
             *(u16*)(out_buf + pos) =
               SWAP16(SWAP16(*(u16*)(out_buf + pos)) - num);
 
@@ -6611,13 +6662,25 @@ havoc_stage:
           if (UR(2)) {
 
             u32 pos = UR(temp_len - 1);
- 
+ #ifdef indeterministic_use_spec
+          if(spec_start_byte - 1 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 1);
+          }
+#endif
+
             *(u16*)(out_buf + pos) += 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 1);
- 
+ #ifdef indeterministic_use_spec
+          if(spec_start_byte - 1 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 1);
+          }
+#endif
+
             u16 num = 1 + UR(ARITH_MAX);
 
             *(u16*)(out_buf + pos) =
@@ -6636,14 +6699,24 @@ havoc_stage:
           if (UR(2)) {
 
             u32 pos = UR(temp_len - 3);
- 
+ #ifdef indeterministic_use_spec
+          if(spec_start_byte - 3 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 3);
+          }
+#endif
 
             *(u32*)(out_buf + pos) -= 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 3);
- 
+#ifdef indeterministic_use_spec
+          if(spec_start_byte - 3 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 3);
+          }
+#endif 
             u32 num = 1 + UR(ARITH_MAX);
 
             *(u32*)(out_buf + pos) =
@@ -6663,13 +6736,25 @@ havoc_stage:
 
             u32 pos = UR(temp_len - 3);
  
+#ifdef indeterministic_use_spec
+          if(spec_start_byte - 3 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 3);
+          }
+#endif
             *(u32*)(out_buf + pos) += 1 + UR(ARITH_MAX);
 
           } else {
 
             u32 pos = UR(temp_len - 3);
             u32 num = 1 + UR(ARITH_MAX);
-           
+ 
+#ifdef indeterministic_use_spec
+          if(spec_start_byte - 3 <= pos && pos <= spec_end_byte)
+          {
+            pos = UR(temp_len - 3);
+          }
+#endif          
             *(u32*)(out_buf + pos) =
               SWAP32(SWAP32(*(u32*)(out_buf + pos)) + num);
 
@@ -6685,6 +6770,12 @@ havoc_stage:
           
           rd_tmp = UR(temp_len);
  
+#ifdef indeterministic_use_spec
+          if(spec_start_byte  <= rd_tmp && rd_tmp <= spec_end_byte)
+          {
+            rd_tmp = UR(temp_len);
+          }
+#endif
           out_buf[rd_tmp] ^= 1 + UR(255);
           break;
 
